@@ -4,6 +4,7 @@ import {
 	createResolver,
 	defineIntegration,
 } from "astro-integration-kit";
+import Vue from '@astrojs/vue'
 
 const testIntegration = defineIntegration<{ name?: string | undefined }>({
 	name: "test-integration",
@@ -22,6 +23,8 @@ const testIntegration = defineIntegration<{ name?: string | undefined }>({
 				watchIntegration,
 				hasIntegration,
 				addDts,
+				addDevToolbarPlugin,
+				addIntegration,
 			}) => {
 				watchIntegration(resolve());
 
@@ -55,6 +58,22 @@ const testIntegration = defineIntegration<{ name?: string | undefined }>({
 				if (hasIntegration("integration-b", "after", "integration-a")) {
 					console.log("Integration B is installed after Integration A");
 				}
+
+				updateConfig({
+					vite: {
+						optimizeDeps: {
+							exclude: ["virtual:@astrojs/vue/app"]
+						}
+					}
+				})
+
+				addDevToolbarPlugin({
+					framework: "vue",
+					name: "Test Plugin",
+					id: "test-plugin",
+					icon: "",
+					src: resolve("./Test.vue"),
+				});
 			},
 		};
 	},
