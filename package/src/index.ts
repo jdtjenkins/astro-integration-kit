@@ -5,3 +5,5 @@ export { createResolver } from "./utils/create-resolver.js";
 export { defineIntegration } from "./utils/define-integration.js";
 export { hasIntegration } from "./utils/has-integration.js";
 export { watchIntegration } from "./utils/watch-integration.js";
+export { addIntegration } from "./utils/add-integration.js";
+export { addDevToolbarPlugin } from "./utils/add-devtoolbar-plugin.js";
