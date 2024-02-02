@@ -6,6 +6,8 @@ import { addVirtualImport } from "./add-virtual-import.js";
 import { addVitePlugin } from "./add-vite-plugin.js";
 import { hasIntegration } from "./has-integration.js";
 import { watchIntegration } from "./watch-integration.js";
+import { addIntegration } from './add-integration.js';
+import { addDevToolbarPlugin } from './add-devtoolbar-plugin.js';
 
 /**
  * Makes creating integrations easier, and adds a few goodies!
@@ -88,6 +90,19 @@ export const defineIntegration = <
 							addWatchFile: params.addWatchFile,
 							updateConfig: params.updateConfig,
 						}),
+					addIntegration: (integration) =>
+						addIntegration({
+							integration,
+							config: params.config,
+							updateConfig: params.updateConfig,
+							logger: params.logger,
+						}),
+					addDevToolbarPlugin: (options) =>
+						addDevToolbarPlugin({
+							...options,
+							updateConfig: params.updateConfig,
+							addDevToolbarApp: params.addDevToolbarApp,
+						})
 				});
 			},
 			"astro:config:done": (params) => {

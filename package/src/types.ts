@@ -1,3 +1,5 @@
+import type { AstroIntegration } from 'astro';
+
 type Hooks = NonNullable<import("astro").AstroIntegration["hooks"]>;
 
 export interface ExtendedHooks {
@@ -106,6 +108,20 @@ export interface ExtendedHooks {
 			 * ```
 			 */
 			watchIntegration: (dir: string) => void;
+			/**
+			 * Adds an integration
+			 */
+			addIntegration: (name: AstroIntegration) => void;
+			/**
+			 * Adds an Astro Dev Toolbar Plugin
+			 */
+			addDevToolbarPlugin: (options: {
+				id: string,
+				name: string,
+				icon: string,
+				framework: "react" | "preact" | "vue" | "svelte" | "solid",
+				src: string,
+			}) => void;
 		}
 	>;
 	"astro:config:done"?: AddParam<Hooks["astro:config:done"]>;
