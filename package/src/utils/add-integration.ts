@@ -20,8 +20,6 @@ export const addIntegration = ({
     };
 
     updateConfig({
-        vite: {
-            plugins: [integration],
-        },
+        integrations: [integration]
     });
 }
