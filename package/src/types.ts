@@ -111,7 +111,7 @@ export interface ExtendedHooks {
 			/**
 			 * Adds an integration
 			 */
-			addIntegration: (name: AstroIntegration) => void;
+			addIntegration: (integration: AstroIntegration) => void;
 			/**
 			 * Adds an Astro Dev Toolbar Plugin
 			 */

@@ -102,7 +102,8 @@ export const defineIntegration = <
 							...options,
 							updateConfig: params.updateConfig,
 							addDevToolbarApp: params.addDevToolbarApp,
-						})
+							injectScript: params.injectScript,
+						}),
 				});
 			},
 			"astro:config:done": (params) => {
