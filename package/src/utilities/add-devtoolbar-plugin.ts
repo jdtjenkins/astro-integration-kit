@@ -3,11 +3,13 @@ import { type HookParameters } from "astro";
 import { createResolver } from "../core/create-resolver.js";
 import { addVirtualImport } from "./add-virtual-import.js";
 
+export type SupportedFrameworks = "react" | "preact" | "vue" | "svelte" | "solid"
+
 export type addDevToolbarPluginUserParams = {
 	id: string;
 	name: string;
 	icon: string;
-	framework: "react" | "preact" | "vue" | "svelte" | "solid";
+	framework: SupportedFrameworks;
 	src: string;
 	style?: string;
 	callback?: (canvas: ShadowRoot, window: HTMLElement) => void;
@@ -17,7 +19,47 @@ export type addDevToolbarPluginParams = addDevToolbarPluginUserParams & {
 	addDevToolbarApp: HookParameters<"astro:config:setup">["addDevToolbarApp"];
 	updateConfig: HookParameters<"astro:config:setup">["updateConfig"];
 	injectScript: HookParameters<"astro:config:setup">["injectScript"];
+	logger: HookParameters<"astro:config:setup">["logger"];
 };
+
+const frameworkRequiredDeps: { [key in SupportedFrameworks]: string[] } = {
+    react: ["@vitejs/plugin-react", "react", "react-dom"],
+    preact: ["preact"],
+    solid: ["solid-js"],
+    vue: ["vue"],
+    svelte: ["svelte"],
+};
+
+const capitalized = (word: string) =>
+    word.charAt(0).toUpperCase()
+    + word.slice(1)
+
+const checkFrameworkDepsAreInstalled = async (framework: SupportedFrameworks): Promise<void> => {
+    const requiredDeps = frameworkRequiredDeps[framework]
+    const promises = requiredDeps.map(dependency => new Promise(async (resolve, reject) => {
+        try {
+            resolve(await import(/* @vite-ignore */dependency))
+        } catch {
+            reject({
+                dependency,
+            })
+        }
+    }));
+
+    const allSettled = await Promise.allSettled(promises);
+
+    const rejectedPromises = allSettled.filter(promise => promise.status === "rejected");
+
+    const missingDependencies = rejectedPromises.map((promiseError) => (promiseError as unknown as {
+        reason: {
+            dependency: string;
+        };
+    }).reason.dependency);
+
+    if (rejectedPromises.length > 0) {
+        throw new Error(`${ capitalized(framework) } Dev Toolbar Plugins requires the following dependencies to be installed: [${ requiredDeps.join(", ") }] - Missing dependencies: [${ missingDependencies.join(', ') }]`)
+    }
+}
 
 /**
  * Add a Dev Toolbar Plugin that uses a Framework component.
@@ -32,6 +74,7 @@ export type addDevToolbarPluginParams = addDevToolbarPluginUserParams & {
  * @param {import("astro").HookParameters<"astro:config:setup">["updateConfig"]} params.updateConfig
  * @param {import("astro").HookParameters<"astro:config:setup">["addDevToolbarApp"]} params.addDevToolbarApp
  * @param {import("astro").HookParameters<"astro:config:setup">["injectScript"]} params.injectScript
+ * @param {import("astro").HookParameters<"astro:config:setup">["logger"]} params.logger
  *
  * @example
  * ```ts
@@ -63,51 +106,64 @@ export const addDevToolbarPlugin = ({
 	addDevToolbarApp,
 	updateConfig,
 	injectScript,
+    logger,
 }: addDevToolbarPluginParams) => {
-	const virtualModuleName = `virtual:astro-devtoolbar-app-${id}`;
+    (async () => {
+        try {
+            await checkFrameworkDepsAreInstalled(framework);
+        } catch (error) {
+            logger.error(`addDevToolbarPlugin - ${ name } - ${ error }`)
 
-	const { resolve } = createResolver(import.meta.url);
+            return;
+        }
 
-	let content = readFileSync(
-		resolve(`./addDevToolbarPluginStubs/${framework}.ts`),
-		"utf8",
-	);
+        switch (framework) {
+            case "react":
+                const react = await import("@vitejs/plugin-react")
+                const FAST_REFRESH_PREAMBLE = react.default.preambleCode;
+                const preamble = FAST_REFRESH_PREAMBLE.replace("__BASE__", "/");
+                injectScript("page", preamble);
+    
+                break;
+        }
+    
+        const virtualModuleName = `virtual:astro-devtoolbar-app-${id}`;
+    
+        const { resolve } = createResolver(import.meta.url);
+    
+        let content = readFileSync(
+            resolve(`./addDevToolbarPluginStubs/${framework}.ts`),
+            "utf8",
+        );
+    
+        content = content
+            .replace("@@COMPONENT_SRC@@", src)
+            .replace("@@ID@@", id)
+            .replace("@@NAME@@", name)
+            .replace("@@ICON@@", icon)
+            .replace("@@STYLE@@", style || "")
+            .replace(
+                "((canvas, window) => {})(canvas, myWindow); //@@CALLBACK@@",
+                !!callback ? `(${ callback?.toString() })(canvas, myWindow)` : "()=>{}",
+            );
 
-	content = content
-		.replace("@@COMPONENT_SRC@@", src)
-		.replace("@@ID@@", id)
-		.replace("@@NAME@@", name)
-		.replace("@@ICON@@", icon)
-		.replace("@@STYLE@@", style || "")
-		.replace(
-			"(canvas, window)=>{}//@@CALLBACK@@",
-			callback?.toString() || "()=>{}",
-		);
-
-	addVirtualImport({
-		name: virtualModuleName,
-		content,
-		updateConfig,
-	});
-
-	switch (framework) {
-		case "react":
-			import("@vitejs/plugin-react").then((react) => {
-				const FAST_REFRESH_PREAMBLE = react.default.preambleCode;
-				const preamble = FAST_REFRESH_PREAMBLE.replace("__BASE__", "/");
-				injectScript("page", preamble);
-			});
-
-			break;
-	}
-
-	updateConfig({
-		vite: {
-			optimizeDeps: {
-				exclude: [virtualModuleName],
-			},
-		},
-	});
-
-	addDevToolbarApp(virtualModuleName);
+        console.log(virtualModuleName)
+    
+        addVirtualImport({
+            name: virtualModuleName,
+            content,
+            updateConfig,
+        });
+    
+        updateConfig({
+            vite: {
+                optimizeDeps: {
+                    exclude: [virtualModuleName],
+                },
+            },
+        });
+    
+        addDevToolbarApp(virtualModuleName);
+    })()
+    
 };
