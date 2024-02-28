@@ -1,7 +1,10 @@
 import { readFileSync } from "fs";
 import { type HookParameters } from "astro";
+import { AstroError } from "astro/errors";
 import { createResolver } from "../core/create-resolver.js";
 import { addVirtualImport } from "./add-virtual-import.js";
+import { existsSync } from 'node:fs';
+import { dirname } from 'pathe';
 
 type SupportedFrameworks = "react" | "preact" | "vue" | "svelte" | "solid";
 
@@ -14,8 +17,90 @@ export type AddDevToolbarFrameworkAppParams = {
 	style?: string;
 } & Pick<
 	HookParameters<"astro:config:setup">,
-	"addDevToolbarApp" | "updateConfig" | "injectScript"
+	"addDevToolbarApp" | "updateConfig" | "injectScript" | "config" | "command"
 >;
+
+const frameworkDependencies: Record<SupportedFrameworks, string[]> = {
+	preact: ['preact'],
+	react: ['react', 'react-dom', '@vitejs/plugin-react'],
+	svelte: ['svelte'],
+	solid: ['solid-js'],
+	vue: ['vue'],
+}
+
+// Returns the path of the AIK folder
+function getNearestPackageJson(directory: string): string {
+	const { resolve } = createResolver(directory);
+	const packageJsonPath = resolve('./package.json');
+
+	if (existsSync(packageJsonPath)) {
+		return resolve();
+	}
+
+	const parentDir = dirname(directory);
+	if (parentDir === directory) {
+		// Reached the root directory without finding a package.json
+		throw new AstroError("Can't find package.json. This should never, EVER get hit. If you ever get this error, sorry we goofed.");
+	}
+
+	return getNearestPackageJson(parentDir);
+}
+
+// https://github.com/sindresorhus/callsites/blob/main/index.js
+function callsites(): NodeJS.CallSite[] {
+	const _prepareStackTrace = Error.prepareStackTrace;
+	try {
+		let result: NodeJS.CallSite[] = [];
+		Error.prepareStackTrace = (_, callSites) => {
+			const callSitesWithoutCurrent = callSites.slice(1);
+			result = callSitesWithoutCurrent;
+			return callSitesWithoutCurrent;
+		};
+
+		new Error().stack;
+		return result;
+	} finally {
+		Error.prepareStackTrace = _prepareStackTrace;
+	}
+}
+
+function getMissingFrameworkDependencies(framework: SupportedFrameworks, configRoot: string): string[] {
+	const aikRoot = getNearestPackageJson(import.meta.url);
+	const integrationRootDirectory = getNearestPackageJson(callsites()[3]?.getEvalOrigin()!)
+
+	const { resolve: rootResolve } = createResolver(configRoot);
+	const { resolve: aikResolve } = createResolver(aikRoot);
+	const { resolve: integrationResolve } = createResolver(integrationRootDirectory);
+
+	
+	const missingDeps = frameworkDependencies[framework]
+	.filter(dep =>
+		!existsSync(rootResolve(`./node_modules/${ dep }`)) &&
+		!existsSync(aikResolve(`./node_modules/${ dep }`)) &&
+		!existsSync(integrationResolve(`./node_modules/${ dep }`))
+	)
+		
+	return missingDeps;
+}
+
+function getDependencyPaths(framework: SupportedFrameworks, configRoot: string): Record<string, string> {
+	const integrationRootDirectory = getNearestPackageJson(callsites()[2]?.getEvalOrigin()!);
+
+	const { resolve: rootResolve } = createResolver(configRoot);
+	const { resolve: integrationRootResolver } = createResolver(integrationRootDirectory);
+
+	return frameworkDependencies[framework].reduce((prev: Record<string, string>, dep) => {
+		const rootInstalledDependency = rootResolve(`./node_modules/${ dep }`);
+
+		prev[dep] = existsSync(rootInstalledDependency) ?
+			rootInstalledDependency :
+			integrationRootResolver(`./node_modules/${ dep }`)
+		
+		
+
+		return prev;
+	}, {})
+}
 
 /**
  * Add a Dev Toolbar Plugin that uses a Framework component.
@@ -30,6 +115,8 @@ export type AddDevToolbarFrameworkAppParams = {
  * @param {import("astro").HookParameters<"astro:config:setup">["updateConfig"]} params.updateConfig
  * @param {import("astro").HookParameters<"astro:config:setup">["addDevToolbarApp"]} params.addDevToolbarApp
  * @param {import("astro").HookParameters<"astro:config:setup">["injectScript"]} params.injectScript
+ * @param {import("astro").HookParameters<"astro:config:setup">["config"]} params.config
+ * @param {import("astro").HookParameters<"astro:config:setup">["command"]} params.command
  *
  * @example
  * ```ts
@@ -59,10 +146,18 @@ export const addDevToolbarFrameworkApp = ({
 	addDevToolbarApp,
 	updateConfig,
 	injectScript,
+	config,
+	command,
 }: AddDevToolbarFrameworkAppParams) => {
 	const virtualModuleName = `virtual:astro-devtoolbar-app-${id}`;
 
 	const { resolve } = createResolver(import.meta.url);
+
+	const missingFrameworkDependencies = getMissingFrameworkDependencies(framework, config.root.pathname);
+
+	if (missingFrameworkDependencies.length > 0) {
+		throw new AstroError(`Missing dependencies for ${framework} framework: ${ missingFrameworkDependencies }`);
+	}
 
 	let content = readFileSync(
 		resolve(`../stubs/add-devtoolbar-framework-app/${framework}.ts`),
@@ -93,4 +188,18 @@ export const addDevToolbarFrameworkApp = ({
 	}
 
 	addDevToolbarApp(virtualModuleName);
+
+	const depRoutesObject = getDependencyPaths(framework, config.root.pathname);
+
+	if (command === 'dev') {
+		updateConfig({
+			vite: {
+				resolve: {
+					alias: {
+						...depRoutesObject,
+					},
+				},
+			}
+		})
+	}
 };

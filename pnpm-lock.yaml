@@ -133,9 +133,6 @@ importers:
       test-vue-app:
         specifier: workspace:*
         version: link:../test-vue-app
-      vue:
-        specifier: ^3.4.20
-        version: 3.4.20(typescript@5.3.3)
     devDependencies:
       '@astrojs/check':
         specifier: ^0.4.1
